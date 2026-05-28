@@ -1,15 +1,58 @@
 #!/bin/bash
 
-DIR="/root/docker/portainer-node"
-STACK_NAME="portainer"
+DIR="/root/docker/portainer-agent"
+STACK_NAME="portainer_agent"
 
-function install_swarm() {
-  echo "== Установка Portainer SWARM (Agent) =="
+function install_standalone() {
+  echo "== Установка Portainer Agent (Standalone Docker Compose) =="
 
   mkdir -p "$DIR"
   cd "$DIR"
 
   cat > docker-compose.yml <<'EOF'
+version: "3.9"
+
+services:
+  portainer_agent:
+    image: portainer/agent:2.39.1
+    container_name: portainer_agent
+    restart: always
+    ports:
+      - "9001:9001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      - /:/host
+EOF
+
+  docker compose up -d
+
+  echo "✔ Standalone Agent установлен (порт 9001)"
+}
+
+function remove_standalone() {
+  echo "== Удаление Standalone Portainer Agent =="
+
+  cd "$DIR" 2>/dev/null || true
+
+  docker compose down 2>/dev/null || true
+  docker rm -f portainer_agent 2>/dev/null || true
+
+  echo "✔ Standalone Agent удалён"
+}
+
+function install_swarm() {
+  echo "== Установка Portainer Agent (Swarm режим) =="
+
+  if ! docker info | grep -q "Swarm: active"; then
+    echo "Swarm не активен → инициализация..."
+    docker swarm init
+  fi
+
+  docker network ls | grep -q portainer_agent_network || \
+  docker network create --driver overlay --attachable portainer_agent_network
+
+  cat > /tmp/portainer-agent-stack.yml <<'EOF'
 version: "3.9"
 
 networks:
@@ -25,8 +68,6 @@ services:
       placement:
         constraints:
           - node.platform.os == linux
-    networks:
-      - portainer_agent_network
     ports:
       - target: 9001
         published: 9001
@@ -36,76 +77,44 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker/volumes:/var/lib/docker/volumes
       - /:/host
-    environment:
-      AGENT_CLUSTER_ADDR: tasks.portainer_agent
+    networks:
+      - portainer_agent_network
 EOF
 
-  if ! docker info | grep -q "Swarm: active"; then
-    echo "Инициализация Swarm..."
-    docker swarm init
-  fi
+  docker stack deploy -c /tmp/portainer-agent-stack.yml "$STACK_NAME"
 
-  docker network ls | grep -q portainer_agent_network || \
-  docker network create --driver overlay --attachable portainer_agent_network
-
-  docker stack deploy -c docker-compose.yml "$STACK_NAME"
-
-  echo "Swarm Agent установлен"
+  echo "✔ Swarm Agent установлен (порт 9001)"
 }
 
 function remove_swarm() {
-  echo "== Удаление SWARM Portainer =="
+  echo "== Удаление Swarm Portainer Agent =="
 
-  docker stack rm "$STACK_NAME" || true
-  docker network rm portainer_agent_network || true
+  docker stack rm "$STACK_NAME" 2>/dev/null || true
+  docker network rm portainer_agent_network 2>/dev/null || true
 
-  echo "Swarm удалён"
-}
-
-function install_standalone() {
-  echo "== Установка Portainer Agent (Standalone Docker) =="
-
-  docker rm -f portainer_agent 2>/dev/null || true
-
-  docker run -d \
-    -p 9001:9001 \
-    --name portainer_agent \
-    --restart=always \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    -v /var/lib/docker/volumes:/var/lib/docker/volumes \
-    -v /:/host \
-    portainer/agent:2.39.1
-
-  echo "Standalone Agent установлен"
-}
-
-function remove_standalone() {
-  echo "== Удаление Standalone Agent =="
-
-  docker rm -f portainer_agent 2>/dev/null || true
-
-  echo "Standalone Agent удалён"
+  echo "✔ Swarm Agent удалён"
 }
 
 while true; do
   echo ""
   echo "=============================="
-  echo "      PORTAINER MENU"
+  echo "     МЕНЮ PORTAINER AGENT"
   echo "=============================="
-  echo "1) Установить SWARM Portainer Agent"
-  echo "2) Удалить SWARM Portainer Agent"
-  echo "3) Установить обычный Docker Portainer Agent"
-  echo "4) Удалить обычный Docker Portainer Agent"
+  echo "1) Установить (Standalone Docker Compose)"
+  echo "2) Удалить (Standalone)"
+  echo "3) Установить (Swarm режим)"
+  echo "4) Удалить (Swarm)"
   echo "5) Выход"
   echo "=============================="
-  read -p "Выбор: " opt
+
+  read -p "Выберите пункт: " opt
 
   case $opt in
-    1) install_swarm ;;
-    2) remove_swarm ;;
-    3) install_standalone ;;
-    4) remove_standalone ;;
-    5) exit 0 ;;
-    *) echo "Неверный выбор" ;;
+    1) install_standalone ;;
+    2) remove_standalone ;;
+    3) install_swarm ;;
+    4) remove_swarm ;;
+    5) echo "Выход..."; exit 0 ;;
+    *) echo "❌ Неверный выбор" ;;
   esac
 done
