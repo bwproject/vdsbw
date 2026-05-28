@@ -4,7 +4,7 @@ DIR="/root/docker/portainer-node"
 STACK_NAME="portainer"
 
 function install_swarm() {
-  echo "== Установка Portainer Swarm (Agent) =="
+  echo "== Установка Portainer SWARM (Agent) =="
 
   mkdir -p "$DIR"
   cd "$DIR"
@@ -50,76 +50,62 @@ EOF
 
   docker stack deploy -c docker-compose.yml "$STACK_NAME"
 
-  echo "Swarm Portainer установлен"
+  echo "Swarm Agent установлен"
 }
 
 function remove_swarm() {
-  echo "== Удаление Portainer Swarm =="
+  echo "== Удаление SWARM Portainer =="
 
   docker stack rm "$STACK_NAME" || true
   docker network rm portainer_agent_network || true
 
-  echo "Swarm Portainer удалён"
+  echo "Swarm удалён"
 }
 
 function install_standalone() {
-  echo "== Установка обычного Portainer =="
+  echo "== Установка Portainer Agent (Standalone Docker) =="
 
-  mkdir -p "$DIR"
-  cd "$DIR"
+  docker rm -f portainer_agent 2>/dev/null || true
 
-  cat > docker-compose.yml <<'EOF'
-version: "3.9"
+  docker run -d \
+    -p 9001:9001 \
+    --name portainer_agent \
+    --restart=always \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v /var/lib/docker/volumes:/var/lib/docker/volumes \
+    -v /:/host \
+    portainer/agent:2.39.1
 
-services:
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: always
-    ports:
-      - "9000:9000"
-      - "9443:9443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-
-volumes:
-  portainer_data:
-EOF
-
-  docker compose up -d
-
-  echo "Standalone Portainer установлен"
+  echo "Standalone Agent установлен"
 }
 
 function remove_standalone() {
-  echo "== Удаление обычного Portainer =="
+  echo "== Удаление Standalone Agent =="
 
-  cd "$DIR" || return
-  docker compose down -v || true
+  docker rm -f portainer_agent 2>/dev/null || true
 
-  echo "Standalone Portainer удалён"
+  echo "Standalone Agent удалён"
 }
 
 while true; do
   echo ""
   echo "=============================="
-  echo "  PORTAINER INSTALL MENU"
+  echo "      PORTAINER MENU"
   echo "=============================="
-  echo "1) Установить Docker Portainer SWARM"
-  echo "2) Удалить Docker Portainer SWARM"
-  echo "3) Установить обычный Docker Portainer"
-  echo "4) Удалить обычный Docker Portainer"
+  echo "1) Установить SWARM Portainer Agent"
+  echo "2) Удалить SWARM Portainer Agent"
+  echo "3) Установить обычный Docker Portainer Agent"
+  echo "4) Удалить обычный Docker Portainer Agent"
   echo "5) Выход"
   echo "=============================="
-  read -p "Выберите опцию: " opt
+  read -p "Выбор: " opt
 
   case $opt in
     1) install_swarm ;;
     2) remove_swarm ;;
     3) install_standalone ;;
     4) remove_standalone ;;
-    5) echo "Выход..."; exit 0 ;;
+    5) exit 0 ;;
     *) echo "Неверный выбор" ;;
   esac
 done
