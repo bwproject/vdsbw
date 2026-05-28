@@ -3,3 +3,5 @@ vdsbw
 
 
 bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/install.sh)
+
+bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/portainer.sh)
