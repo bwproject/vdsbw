@@ -2,23 +2,50 @@
 
 set -e
 
+echo "[+] Проверка зависимостей..."
+
+# Проверка Docker
+if ! command -v docker >/dev/null 2>&1; then
+    echo "[!] Docker не установлен"
+    exit 1
+fi
+
+# Установка OpenSSL если нет
 if ! command -v openssl >/dev/null 2>&1; then
-    echo "[+] Устанавливаю openssl..."
+    echo "[+] OpenSSL не найден, устанавливаю..."
+
+    export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y openssl
 fi
 
-read -p "Введите домен для Fake-TLS (например mirror.yandex.ru): " EE_DOMAIN
+# Проверка curl (нужен для healthcheck и IP)
+if ! command -v curl >/dev/null 2>&1; then
+    echo "[+] curl не найден, устанавливаю..."
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y curl
+fi
+
+echo
+
+# Ввод домена
+read -p "Введите домен для Fake-TLS (EE_DOMAIN): " EE_DOMAIN
 
 if [ -z "$EE_DOMAIN" ]; then
-    echo "Ошибка: домен не указан"
+    echo "[!] Домен не указан"
     exit 1
 fi
 
-SECRET=$(head -c 16 /dev/urandom | xxd -ps)
+# Генерация секрета
+SECRET=$(openssl rand -hex 16)
 
+echo "[+] SECRET: $SECRET"
+
+# Создание директорий
 mkdir -p /root/docker/teleproxy/data
 
+# Docker compose
 cat > /root/docker/teleproxy/docker-compose.yml << EOF
 services:
   teleproxy:
@@ -50,31 +77,28 @@ services:
       start_period: 60s
 EOF
 
-ufw allow 8884/tcp 2>/dev/null || true
-ufw allow 8885/tcp 2>/dev/null || true
+echo "[+] Запускаю контейнер..."
 
 cd /root/docker/teleproxy
 
 docker compose pull
 docker compose up -d
 
+echo "[+] Ожидание запуска..."
 sleep 10
 
 IP=$(curl -4 -s ifconfig.me)
 
 echo
 echo "========================================="
-echo " TeleProxy успешно установлен"
+echo " TeleProxy установлен"
 echo "========================================="
-echo "IP:        ${IP}"
+echo "IP:        $IP"
 echo "PORT:      8884"
-echo "DOMAIN:    ${EE_DOMAIN}"
-echo "SECRET:    ${SECRET}"
+echo "DOMAIN:    $EE_DOMAIN"
+echo "SECRET:    $SECRET"
+echo "========================================="
 echo
 
-echo "=== docker-compose.yml ==="
-cat docker-compose.yml
-
-echo
-echo "=== Логи ==="
-docker logs --tail 30 teleproxy
+echo "[+] Последние логи:"
+docker logs --tail 30 teleproxy || true
