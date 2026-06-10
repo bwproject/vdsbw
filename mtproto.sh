@@ -9,6 +9,29 @@ if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; th
     exit 1
 fi
 
+if ! command -v docker >/dev/null 2>&1; then
+    echo "[!] Docker не установлен"
+    exit 1
+fi
+
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "[+] Устанавливаю openssl..."
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update
+
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y openssl
+    elif command -v apt >/dev/null 2>&1; then
+        apt install -y openssl
+    else
+        echo "[!] Не удалось установить openssl автоматически"
+        exit 1
+    fi
+fi
+
+SECRET="ee$(openssl rand -hex 15)"
+
 mkdir -p /root/docker/mtproxy
 
 cat > /root/docker/mtproxy/docker-compose.yml << EOF
@@ -20,14 +43,14 @@ services:
     network_mode: host
     environment:
       - MT_PORT=${PORT}
-      - MT_SECRET=auto
+      - MT_SECRET=${SECRET}
       - MT_TLS_DOMAIN=mirror.yandex.ru
 EOF
 
-echo "[+] Открываю порт ${PORT} в UFW..."
+echo "[+] Открываю порт ${PORT}/tcp"
 ufw allow ${PORT}/tcp 2>/dev/null || true
 
-echo "[+] Запускаю MTProxy..."
+echo "[+] Загружаю образ..."
 cd /root/docker/mtproxy
 
 docker compose pull
@@ -39,9 +62,21 @@ sleep 5
 IP=$(curl -4 -s ifconfig.me)
 
 echo
-echo "=== Ссылка для подключения ==="
-docker logs mtproxy 2>&1 | grep "tg://proxy" | grep "${IP}" | head -1 || true
+echo "=========================================="
+echo " MTProxy успешно установлен"
+echo "=========================================="
+echo "IP:      ${IP}"
+echo "PORT:    ${PORT}"
+echo "SECRET:  ${SECRET}"
+echo
+
+echo "=== Ссылка из логов ==="
+docker logs mtproxy 2>&1 | grep "tg://proxy" | head -1 || true
 
 echo
-echo "=== Последние логи ==="
-docker logs --tail 20 mtproxy
+echo "=== Ручная ссылка ==="
+echo "tg://proxy?server=${IP}&port=${PORT}&secret=${SECRET}"
+echo
+
+echo "=== docker-compose.yml ==="
+cat /root/docker/mtproxy/docker-compose.yml
