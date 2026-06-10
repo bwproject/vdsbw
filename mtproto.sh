@@ -44,7 +44,7 @@ services:
     environment:
       - MT_PORT=${PORT}
       - MT_SECRET=${SECRET}
-      - MT_TLS_DOMAIN=mirror.yandex.ru
+      - MT_TLS_DOMAIN=ajax.googleapis.com
 EOF
 
 echo "[+] Открываю порт ${PORT}/tcp"
