@@ -10,3 +10,5 @@ bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/mtproto
 
 
 bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/teleproxy.sh)
+
+bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/pterodactyl.sh)
