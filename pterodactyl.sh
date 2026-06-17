@@ -3,9 +3,13 @@
 set -e
 
 echo "======================================"
-echo "   Pterodactyl FULL Updater (Panel + Wings)"
+echo "   Pterodactyl FULL Updater"
+echo "   (Panel + Wings)"
 echo "======================================"
 
+# =========================
+# СТАНДАРТНЫЕ ПУТИ
+# =========================
 DEFAULT_PATHS=(
   "/var/www/pterodactyl"
   "/srv/pterodactyl"
@@ -13,8 +17,9 @@ DEFAULT_PATHS=(
 )
 
 PANEL_PATH=""
+UPDATE_PANEL=true
 
-echo "[1/7] Поиск панели в стандартных путях..."
+echo "[1/8] Поиск панели в стандартных путях..."
 
 for path in "${DEFAULT_PATHS[@]}"; do
   if [ -f "$path/artisan" ]; then
@@ -24,22 +29,28 @@ for path in "${DEFAULT_PATHS[@]}"; do
   fi
 done
 
-# если не нашли — спрашиваем
+# =========================
+# РУЧНОЙ ВВОД ПУТИ
+# =========================
 if [ -z "$PANEL_PATH" ]; then
   echo "[-] Панель не найдена в стандартных путях."
   echo "👉 Введите путь к панели или нажмите ENTER чтобы пропустить обновление панели:"
   read -rp "Путь к панели: " PANEL_PATH
 fi
 
-UPDATE_PANEL=true
-
-# если пусто — пропускаем панель
+# =========================
+# ПРОПУСК ПАНЕЛИ
+# =========================
 if [ -z "$PANEL_PATH" ]; then
   echo "[!] Обновление панели пропущено. Переходим к Wings..."
   UPDATE_PANEL=false
-else
+fi
+
+# проверка пути
+if [ "$UPDATE_PANEL" = true ]; then
   if [ ! -f "$PANEL_PATH/artisan" ]; then
-    echo "[!] Неверный путь панели (artisan не найден). Пропускаем панель."
+    echo "[!] Неверный путь панели — artisan не найден"
+    echo "[!] Панель будет пропущена"
     UPDATE_PANEL=false
   fi
 fi
@@ -48,60 +59,91 @@ fi
 # ОБНОВЛЕНИЕ ПАНЕЛИ
 # =========================
 if [ "$UPDATE_PANEL" = true ]; then
-  echo "[2/7] Обновление панели..."
+
+  echo "[2/8] Обновление панели..."
 
   cd "$PANEL_PATH"
 
-  echo "[*] Maintenance mode..."
+  echo "[*] Включаем maintenance mode..."
   php artisan down || true
 
-  echo "[*] Git update..."
-  git fetch --all
-  git reset --hard origin/$(git rev-parse --abbrev-ref HEAD)
+  # =========================
+  # GIT ИЛИ RELEASE
+  # =========================
+  if [ -d ".git" ]; then
+    echo "[*] Найден .git — обновление через git"
 
-  echo "[*] Composer install..."
+    git fetch --all
+    git reset --hard origin/$(git rev-parse --abbrev-ref HEAD)
+
+  else
+    echo "[*] .git не найден — используем release archive"
+
+    echo "[*] Скачивание панели..."
+    curl -L -o panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
+
+    echo "[*] Распаковка..."
+    tar -xzf panel.tar.gz
+
+    rm -f panel.tar.gz
+  fi
+
+  # =========================
+  # ПРАВА
+  # =========================
+  echo "[*] Выставляем права..."
+  chmod -R 755 storage bootstrap/cache || true
+
+  # =========================
+  # COMPOSER
+  # =========================
+  echo "[*] Установка зависимостей..."
   composer install --no-dev --optimize-autoloader
 
-  echo "[*] Migrations..."
+  # =========================
+  # МИГРАЦИИ
+  # =========================
+  echo "[*] Выполняем миграции..."
   php artisan migrate --force
 
-  echo "[*] Cache cleanup..."
+  # =========================
+  # КЕШ
+  # =========================
+  echo "[*] Очистка кеша..."
   php artisan cache:clear
   php artisan config:clear
   php artisan route:clear
   php artisan view:clear
   php artisan optimize:clear || true
 
-  echo "[*] Queue restart..."
+  # =========================
+  # QUEUE
+  # =========================
+  echo "[*] Перезапуск очередей..."
   php artisan queue:restart || true
 
-  echo "[*] Bringing panel up..."
+  echo "[*] Выключаем maintenance mode..."
   php artisan up || true
 
   echo "[+] Панель обновлена"
 else
-  echo "[2/7] Панель пропущена"
+  echo "[2/8] Панель пропущена"
 fi
 
 # =========================
-# ОБНОВЛЕНИЕ WINGS
+# WINGS
 # =========================
-
-echo "[3/7] Обновление Wings..."
-
-if command -v wings >/dev/null 2>&1; then
-  echo "[*] Wings найден как бинарник"
-fi
+echo "[3/8] Обновление Wings..."
 
 if systemctl list-units --type=service | grep -q wings; then
-  echo "[*] Перезапуск Wings через systemctl..."
+  echo "[*] Перезапуск Wings через systemd..."
   systemctl restart wings || true
   systemctl status wings --no-pager || true
 else
-  echo "[!] Wings service не найден (systemctl)."
-  echo "    Если у тебя Docker — перезапусти контейнер вручную."
+  echo "[!] Wings service не найден"
+  echo "    Если используешь Docker — перезапусти контейнер вручную"
 fi
 
 echo "======================================"
-echo "   ГОТОВО: обновление завершено"
+echo "   ОБНОВЛЕНИЕ ЗАВЕРШЕНО"
 echo "======================================"
