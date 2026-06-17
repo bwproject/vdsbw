@@ -4,11 +4,24 @@ set -e
 
 echo "======================================"
 echo "   Pterodactyl FULL Updater"
-echo "   Panel + Wings (stable mode)"
+echo "   Panel + Wings"
 echo "======================================"
 
 # =========================
-# СТАНДАРТНЫЕ ПУТИ
+# ARG PARSER
+# =========================
+PANEL_PATH=""
+
+for arg in "$@"; do
+  case $arg in
+    -panel=*)
+      PANEL_PATH="${arg#*=}"
+      ;;
+  esac
+done
+
+# =========================
+# DEFAULT PATHS
 # =========================
 DEFAULT_PATHS=(
   "/var/www/pterodactyl"
@@ -16,105 +29,116 @@ DEFAULT_PATHS=(
   "/var/www/pterodactyl/public"
 )
 
-PANEL_PATH=""
 UPDATE_PANEL=true
 
-echo "[1/9] Поиск панели..."
-
-for path in "${DEFAULT_PATHS[@]}"; do
-  if [ -f "$path/artisan" ]; then
-    PANEL_PATH="$path"
-    echo "[+] Панель найдена: $PANEL_PATH"
-    break
-  fi
-done
+echo "[1/10] Поиск панели..."
 
 # =========================
-# РУЧНОЙ ВВОД
+# AUTO DETECT PANEL
 # =========================
 if [ -z "$PANEL_PATH" ]; then
-  echo "[-] Панель не найдена в стандартных путях."
+  for path in "${DEFAULT_PATHS[@]}"; do
+    if [ -f "$path/artisan" ]; then
+      PANEL_PATH="$path"
+      echo "[+] Панель найдена: $PANEL_PATH"
+      break
+    fi
+  done
+fi
+
+# =========================
+# MANUAL INPUT IF NOT FOUND
+# =========================
+if [ -z "$PANEL_PATH" ]; then
+  echo "[-] Панель не указана или не найдена"
   echo "👉 Введите путь к панели или нажмите ENTER чтобы пропустить:"
   read -rp "Путь к панели: " PANEL_PATH
 fi
 
 # =========================
-# ПРОПУСК ПАНЕЛИ
+# SKIP PANEL OPTION
 # =========================
 if [ -z "$PANEL_PATH" ]; then
   echo "[!] Панель пропущена — переходим к Wings"
   UPDATE_PANEL=false
 fi
 
-# проверка пути
 if [ "$UPDATE_PANEL" = true ]; then
   if [ ! -f "$PANEL_PATH/artisan" ]; then
-    echo "[!] Неверный путь (artisan не найден)"
+    echo "[!] artisan не найден — панель пропущена"
     UPDATE_PANEL=false
   fi
 fi
 
 # =========================
-# ОБНОВЛЕНИЕ ПАНЕЛИ
+# PANEL UPDATE
 # =========================
 if [ "$UPDATE_PANEL" = true ]; then
 
-  echo "[2/9] Обновление панели..."
+  echo "[2/10] Обновление панели..."
   cd "$PANEL_PATH"
 
   echo "[*] Maintenance mode..."
   php artisan down || true
 
   # =========================
-  # GIT ИЛИ RELEASE
+  # GIT OR RELEASE
   # =========================
   if [ -d ".git" ]; then
 
-    echo "[*] Git install — обновление через git"
+    echo "[*] Git установка обнаружена"
 
     git fetch --all
     git reset --hard origin/$(git rev-parse --abbrev-ref HEAD)
 
   else
 
-    echo "[*] Release install — скачивание архива"
+    echo "[*] Release установка — скачивание архива"
 
-    echo "[*] Скачивание panel.tar.gz..."
+    echo "[*] Downloading panel.tar.gz..."
     curl -fL --retry 3 --connect-timeout 15 \
       -o panel.tar.gz \
       https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
 
     if [ ! -s panel.tar.gz ]; then
-      echo "[!] Ошибка: файл не скачался"
+      echo "[!] Ошибка загрузки архива"
       exit 1
     fi
 
-    echo "[*] Распаковка..."
+    echo "[*] Extracting..."
     tar -xzf panel.tar.gz
 
     rm -f panel.tar.gz
   fi
 
   # =========================
-  # ПРАВА
+  # PERMISSIONS (IMPORTANT)
   # =========================
-  echo "[*] Выставляем права..."
-  chmod -R 755 storage bootstrap/cache || true
+  echo "[*] Fixing permissions..."
+
+  if id "www-data" &>/dev/null; then
+    chown -R www-data:www-data "$PANEL_PATH"
+  fi
+
+  chmod -R u+rwX,g+rX,o-rwx \
+    "$PANEL_PATH/storage" \
+    "$PANEL_PATH/bootstrap/cache" \
+    "$PANEL_PATH/public" || true
 
   # =========================
   # COMPOSER
   # =========================
-  echo "[*] Composer install..."
+  echo "[*] Installing dependencies..."
   composer install --no-dev --optimize-autoloader
 
   # =========================
   # MIGRATIONS
   # =========================
-  echo "[*] Migrations..."
+  echo "[*] Running migrations..."
   php artisan migrate --force
 
   # =========================
-  # CACHE CLEAN
+  # CACHE CLEAR
   # =========================
   echo "[*] Clearing cache..."
   php artisan cache:clear
@@ -132,26 +156,25 @@ if [ "$UPDATE_PANEL" = true ]; then
   echo "[*] Bringing panel up..."
   php artisan up || true
 
-  echo "[+] Panel updated successfully"
+  echo "[+] Panel update completed"
 
 else
-  echo "[2/9] Panel skipped"
+  echo "[2/10] Panel skipped"
 fi
 
 # =========================
-# WINGS
+# WINGS UPDATE
 # =========================
-echo "[3/9] Updating Wings..."
+echo "[3/10] Wings update..."
 
 if systemctl list-units --type=service | grep -q wings; then
-  echo "[*] Restarting Wings via systemd..."
+  echo "[*] Restarting Wings..."
   systemctl restart wings || true
   systemctl status wings --no-pager || true
 else
-  echo "[!] Wings service not found"
-  echo "    (If Docker — restart container manually)"
+  echo "[!] Wings service not found (Docker users must restart manually)"
 fi
 
 echo "======================================"
-echo "   UPDATE COMPLETED"
-echo "======================================
+echo "   DONE"
+echo "======================================"
