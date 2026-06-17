@@ -12,3 +12,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/mtproto
 bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/teleproxy.sh)
 
 bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/pterodactyl.sh)
+
+bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/pterodactyl.sh) \
+-panel=/hdd/pterodactyl/volumes/f1972106-319b-4063-a001-3fbd0f10f66c/webroot/pterodactyl
