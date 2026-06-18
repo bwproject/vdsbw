@@ -5,19 +5,19 @@ set -e
 BASE="/root/docker/tg-zapret"
 REPO="https://github.com/Flowseal/tg-ws-proxy.git"
 
-echo "📦 Установка tg-zapret..."
+echo "📦 Installing tg-zapret..."
 
-# 1. Проверки
-command -v docker >/dev/null 2>&1 || { echo "❌ Docker не установлен"; exit 1; }
-command -v docker compose >/dev/null 2>&1 || { echo "❌ Docker Compose не установлен"; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo "❌ Docker not installed"; exit 1; }
+command -v docker compose >/dev/null 2>&1 || { echo "❌ Docker Compose not installed"; exit 1; }
 
-# 2. Создаём папку
 mkdir -p "$BASE"
 cd "$BASE"
 
-echo "📁 Перешли в $BASE"
+echo "📁 Working dir: $BASE"
 
-# 3. СНАЧАЛА создаём docker-compose.yml
+# ----------------------------
+# docker-compose
+# ----------------------------
 cat > docker-compose.yml <<'EOF'
 version: "3.9"
 
@@ -29,44 +29,56 @@ services:
     restart: always
     network_mode: host
 
-    command: >
-      python -m tg_ws_proxy
-      --host 0.0.0.0
-      --port 3980
-      --secret cae3e38eb2e196fb48cacb49de344823
-      --dc-ip 2 149.154.167.220
-      --dc-ip 4 149.154.167.220
-      --fake-tls-domain les.projectbw.ru
-      --cfproxy-domain projectbw.ru
-      -v
+    environment:
+      SECRET: cae3e38eb2e196fb48cacb49de344823
+      PORT: 3980
+      HOST: 0.0.0.0
+      DC_IPS: "2:149.154.167.220 4:149.154.167.220"
+      FAKE_TLS_DOMAIN: les.projectbw.ru
+      CFPROXY_DOMAIN: projectbw.ru
 EOF
 
-echo "📝 docker-compose.yml создан"
+echo "📝 docker-compose created"
 
-# 4. Потом клонируем в нужную папку
+# ----------------------------
+# clone repo
+# ----------------------------
 if [ -d "tg-ws-proxy" ]; then
-  echo "⚠️ tg-ws-proxy уже существует → обновляем"
+  echo "♻️ updating repo..."
   cd tg-ws-proxy
   git pull
   cd ..
 else
-  echo "📥 Клонируем репозиторий..."
+  echo "📥 cloning repo..."
   git clone "$REPO" tg-ws-proxy
 fi
 
-echo "📦 Репозиторий готов"
+echo "📦 repo ready"
 
-# 5. Сборка
-echo "🔧 build..."
+# ----------------------------
+# build + up
+# ----------------------------
+echo "🔧 building..."
 docker compose build
 
-# 6. Запуск
-echo "🚀 up..."
+echo "🚀 starting..."
 docker compose up -d
 
-# 7. Проверка
-echo "📊 status:"
-docker ps | grep tg-zapret || true
+cd "$BASE"
 
-echo "✅ ГОТОВО"
-echo "📁 $BASE"
+# ----------------------------
+# logs parsing
+# ----------------------------
+echo "⏳ waiting for service..."
+sleep 3
+
+echo ""
+echo "================ CONNECT INFO ================"
+
+docker logs tg-zapret 2>&1 | grep -E "Connect:|tg://proxy|Listening|Secret" | tail -n 20
+
+echo "============================================="
+echo ""
+echo "📊 live logs (Ctrl+C to exit):"
+
+docker compose logs -f
