@@ -49,7 +49,8 @@ fi
 echo
 echo -n "🔑 Генерация Fake TLS секрета..."
 
-DOMAIN_HEX=$(echo -n "${FAKE_DOMAIN}" | xxd -ps | tr -d '\n')
+# HEX без xxd (чистый bash + od)
+DOMAIN_HEX=$(echo -n "${FAKE_DOMAIN}" | od -An -tx1 | tr -d ' \n')
 
 echo
 echo "   Hex домена: ${DOMAIN_HEX}"
