@@ -2,7 +2,7 @@
 
 set -e
 
-Цвета
+#Цвета
 
 GREEN=’\033[0;32m’
 RED=’\033[0;31m’
@@ -19,21 +19,21 @@ echo “🚀 Установка MTProto Proxy (Docker Compose)”
 echo “━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━”
 echo -e “📌 Fake TLS домен: ${BLUE}${FAKE_DOMAIN}${NC}”
 
-Проверка Docker
+#Проверка Docker
 
 if ! command -v docker >/dev/null 2>&1; then
 echo -e “${RED}❌ Docker не установлен${NC}”
 exit 1
 fi
 
-Проверка Docker Compose
+#Проверка Docker Compose
 
 if ! docker compose version >/dev/null 2>&1; then
 echo -e “${RED}❌ Docker Compose не установлен${NC}”
 exit 1
 fi
 
-Проверка OpenSSL
+#Проверка OpenSSL
 
 if ! command -v openssl >/dev/null 2>&1; then
 echo “[+] Устанавливаю OpenSSL…”
@@ -42,7 +42,7 @@ apt-get update
 apt-get install -y openssl
 fi
 
-Проверка curl
+#Проверка curl
 
 if ! command -v curl >/dev/null 2>&1; then
 echo “[+] Устанавливаю curl…”
