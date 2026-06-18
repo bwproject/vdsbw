@@ -2,31 +2,22 @@
 
 set -e
 
-BASE_DIR="/root/docker/tg-zapret"
+BASE="/root/docker/tg-zapret"
 REPO="https://github.com/Flowseal/tg-ws-proxy.git"
 
 echo "📦 Установка tg-zapret..."
 
-# 1. Проверка Docker
+# 1. Проверки
 command -v docker >/dev/null 2>&1 || { echo "❌ Docker не установлен"; exit 1; }
 command -v docker compose >/dev/null 2>&1 || { echo "❌ Docker Compose не установлен"; exit 1; }
 
-# 2. Создаём базовую папку
-mkdir -p "$BASE_DIR"
-cd "$BASE_DIR"
+# 2. Создаём папку
+mkdir -p "$BASE"
+cd "$BASE"
 
-# 3. Клонируем ВНУТРЬ tg-ws-proxy (ВАЖНО)
-if [ -d "tg-ws-proxy" ]; then
-  echo "⚠️ tg-ws-proxy уже существует → обновляем"
-  cd tg-ws-proxy
-  git pull
-  cd ..
-else
-  echo "📥 Клонируем репозиторий..."
-  git clone "$REPO" tg-ws-proxy
-fi
+echo "📁 Перешли в $BASE"
 
-# 4. Создаём docker-compose.yml В КОРНЕ tg-zapret
+# 3. СНАЧАЛА создаём docker-compose.yml
 cat > docker-compose.yml <<'EOF'
 version: "3.9"
 
@@ -50,16 +41,32 @@ services:
       -v
 EOF
 
-# 5. Сборка и запуск
+echo "📝 docker-compose.yml создан"
+
+# 4. Потом клонируем в нужную папку
+if [ -d "tg-ws-proxy" ]; then
+  echo "⚠️ tg-ws-proxy уже существует → обновляем"
+  cd tg-ws-proxy
+  git pull
+  cd ..
+else
+  echo "📥 Клонируем репозиторий..."
+  git clone "$REPO" tg-ws-proxy
+fi
+
+echo "📦 Репозиторий готов"
+
+# 5. Сборка
 echo "🔧 build..."
 docker compose build
 
+# 6. Запуск
 echo "🚀 up..."
 docker compose up -d
 
-# 6. Проверка
+# 7. Проверка
 echo "📊 status:"
 docker ps | grep tg-zapret || true
 
-echo "✅ DONE"
-echo "📁 $BASE_DIR"
+echo "✅ ГОТОВО"
+echo "📁 $BASE"
