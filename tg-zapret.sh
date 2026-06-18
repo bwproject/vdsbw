@@ -35,7 +35,6 @@ services:
         --dc-ip 2:149.154.167.220
         --dc-ip 4:149.154.167.220
         --dc-ip 203:91.105.192.100
-        --fake-tls-domain les.projectbw.ru
         -v
 EOF
 
