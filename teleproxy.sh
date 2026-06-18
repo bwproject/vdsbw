@@ -2,103 +2,150 @@
 
 set -e
 
-echo "[+] Проверка зависимостей..."
+Цвета
 
-# Проверка Docker
+GREEN=’\033[0;32m’
+RED=’\033[0;31m’
+YELLOW=’\033[1;33m’
+BLUE=’\033[0;34m’
+NC=’\033[0m’
+
+CONTAINER_NAME=“mtproto-proxy”
+INSTALL_DIR=”/root/docker/mtproto”
+PORT=“8443”
+FAKE_DOMAIN=“ya.ru”
+
+echo “🚀 Установка MTProto Proxy (Docker Compose)”
+echo “━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━”
+echo -e “📌 Fake TLS домен: ${BLUE}${FAKE_DOMAIN}${NC}”
+
+Проверка Docker
+
 if ! command -v docker >/dev/null 2>&1; then
-    echo "[!] Docker не установлен"
-    exit 1
+echo -e “${RED}❌ Docker не установлен${NC}”
+exit 1
 fi
 
-# Установка OpenSSL если нет
+Проверка Docker Compose
+
+if ! docker compose version >/dev/null 2>&1; then
+echo -e “${RED}❌ Docker Compose не установлен${NC}”
+exit 1
+fi
+
+Проверка OpenSSL
+
 if ! command -v openssl >/dev/null 2>&1; then
-    echo "[+] OpenSSL не найден, устанавливаю..."
-
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y openssl
+echo “[+] Устанавливаю OpenSSL…”
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y openssl
 fi
 
-# Проверка curl (нужен для healthcheck и IP)
+Проверка curl
+
 if ! command -v curl >/dev/null 2>&1; then
-    echo "[+] curl не найден, устанавливаю..."
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y curl
+echo “[+] Устанавливаю curl…”
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y curl
 fi
 
 echo
+echo -n “🔑 Генерация Fake TLS секрета…”
 
-# Ввод домена
-read -p "Введите домен для Fake-TLS (EE_DOMAIN): " EE_DOMAIN
+DOMAIN_HEX=$(echo -n “${FAKE_DOMAIN}” | xxd -ps | tr -d ‘\n’)
 
-if [ -z "$EE_DOMAIN" ]; then
-    echo "[!] Домен не указан"
-    exit 1
+echo
+echo “   Hex домена: ${DOMAIN_HEX}”
+
+DOMAIN_LEN=${#DOMAIN_HEX}
+NEEDED=$((30 - DOMAIN_LEN))
+RANDOM_HEX=$(openssl rand -hex 15 | cut -c1-${NEEDED})
+
+SECRET=“ee${DOMAIN_HEX}${RANDOM_HEX}”
+
+echo “   Случайное дополнение: ${RANDOM_HEX}”
+echo -e “   Секрет: ${YELLOW}${SECRET}${NC}”
+echo “   Длина: ${#SECRET} символов”
+
+echo
+echo -n “🔍 Проверка порта ${PORT}… “
+
+if ss -tuln | grep -q “:${PORT} “; then
+echo -e “${YELLOW}порт занят${NC}”
+
+for alt_port in 2444 2445 2446; do
+    if ! ss -tuln | grep -q ":${alt_port} "; then
+        PORT=$alt_port
+        echo "   Используем порт: ${PORT}"
+        break
+    fi
+done
+
+else
+echo -e “${GREEN}свободен${NC}”
 fi
 
-# Генерация секрета
-SECRET=$(openssl rand -hex 16)
+mkdir -p “${INSTALL_DIR}”
 
-echo "[+] SECRET: $SECRET"
-
-# Создание директорий
-mkdir -p /root/docker/teleproxy/data
-
-# Docker compose
-cat > /root/docker/teleproxy/docker-compose.yml << EOF
+cat > “${INSTALL_DIR}/docker-compose.yml” <<EOF
 services:
-  teleproxy:
-    image: ghcr.io/teleproxy/teleproxy:latest
-    platform: linux/amd64
-    container_name: teleproxy
-    ports:
-      - "8884:443"
-      - "8885:8888"
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    environment:
-      - SECRET=${SECRET}
-      - PORT=443
-      - STATS_PORT=8888
-      - WORKERS=1
-      - RANDOM_PADDING=true
-      - EE_DOMAIN=${EE_DOMAIN}
-    volumes:
-      - ./data:/opt/teleproxy/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8888/stats || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+mtproto:
+image: telegrammessenger/proxy:latest
+container_name: ${CONTAINER_NAME}
+restart: unless-stopped
+ports:
+- “${PORT}:443”
+environment:
+SECRET: “${SECRET}”
 EOF
 
-echo "[+] Запускаю контейнер..."
+echo
+echo “📦 Запуск контейнера…”
 
-cd /root/docker/teleproxy
+cd “${INSTALL_DIR}”
 
+docker compose down >/dev/null 2>&1 || true
 docker compose pull
 docker compose up -d
 
-echo "[+] Ожидание запуска..."
-sleep 10
-
-IP=$(curl -4 -s ifconfig.me)
-
 echo
-echo "========================================="
-echo " TeleProxy установлен"
-echo "========================================="
-echo "IP:        $IP"
-echo "PORT:      8884"
-echo "DOMAIN:    $EE_DOMAIN"
-echo "SECRET:    $SECRET"
-echo "========================================="
-echo
+echo “⏳ Ожидание запуска…”
+sleep 5
 
-echo "[+] Последние логи:"
-docker logs --tail 30 teleproxy || true
+if docker ps –format ‘{{.Names}}’ | grep -q “^${CONTAINER_NAME}$”; then
+
+SERVER_IP=$(curl -4 -s ifconfig.me)
+echo
+echo -e "${GREEN}✅ MTProto Proxy успешно запущен${NC}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🌐 Сервер: ${SERVER_IP}"
+echo "🔌 Порт: ${PORT}"
+echo "🔑 Секрет: ${SECRET}"
+echo "🌐 Fake TLS домен: ${FAKE_DOMAIN}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🔗 Telegram:"
+echo "tg://proxy?server=${SERVER_IP}&port=${PORT}&secret=${SECRET}"
+echo "https://t.me/proxy?server=${SERVER_IP}&port=${PORT}&secret=${SECRET}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+cat > "${INSTALL_DIR}/mtproto_config.txt" <<EOF
+
+SERVER=${SERVER_IP}
+PORT=${PORT}
+SECRET=${SECRET}
+DOMAIN=${FAKE_DOMAIN}
+LINK=tg://proxy?server=${SERVER_IP}&port=${PORT}&secret=${SECRET}
+EOF
+
+echo "💾 Конфигурация сохранена:"
+echo "   ${INSTALL_DIR}/mtproto_config.txt"
+echo
+echo "📋 Последние логи:"
+docker logs --tail 10 ${CONTAINER_NAME} || true
+
+else
+echo -e “${RED}❌ Контейнер не запустился${NC}”
+docker logs ${CONTAINER_NAME}
+exit 1
+fi
