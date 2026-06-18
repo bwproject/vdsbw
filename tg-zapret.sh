@@ -23,19 +23,20 @@ version: "3.9"
 
 services:
   tg-zapret:
-    build:
-      context: ./tg-ws-proxy
+    build: ./tg-ws-proxy
     container_name: tg-zapret
     restart: always
-    network_mode: host
-
-    environment:
-      SECRET: cae3e38eb2e196fb48cacb49de344823
-      PORT: 3980
-      HOST: 0.0.0.0
-      DC_IPS: "2:149.154.167.220 4:149.154.167.220"
-      FAKE_TLS_DOMAIN: les.projectbw.ru
-      CFPROXY_DOMAIN: projectbw.ru
+    ports:
+      - "1443:1443"
+    command: >
+        --host 0.0.0.0
+        --port 1443
+        --secret cae3e38eb2e196fb48cacb49de344823
+        --dc-ip 2:149.154.167.220
+        --dc-ip 4:149.154.167.220
+        --dc-ip 203:91.105.192.100
+        --fake-tls-domain les.projectbw.ru
+        -v
 EOF
 
 echo "📝 docker-compose created"
