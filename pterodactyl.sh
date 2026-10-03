@@ -283,10 +283,14 @@ EOF
   if [[ ! -f /etc/pterodactyl/config.yml ]]; then
     warn "Нет /etc/pterodactyl/config.yml."
     warn "Создайте Node в Panel и установите config.yml."
+    warn "Wings установлен, но запуск отложен до появления config.yml."
+  else
+    systemctl restart wings || {
+      err "Wings не запустился. Проверьте: journalctl -u wings -n 100 --no-pager"
+      return 1
+    }
+    systemctl status wings --no-pager || true
   fi
-
-  systemctl restart wings || true
-  systemctl status wings --no-pager || true
   ok "Wings установлен: $w"
   return 0
 }
