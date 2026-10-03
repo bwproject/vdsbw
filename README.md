@@ -16,4 +16,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/pteroda
 bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/pterodactyl.sh) \
 -panel=/hdd/pterodactyl/volumes/f1972106-319b-4063-a001-3fbd0f10f66c/webroot/pterodactyl
 
+bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/pterodactyl.sh) \
+-panel=/hdd/pterodactyl/volumes/f1972106-319b-4063-a001-3fbd0f10f66c/webroot/pterodactyl \
+-wings=default \
+-update
+
 bash <(curl -fsSL https://raw.githubusercontent.com/bwproject/vdsbw/main/tg-zapret.sh)
