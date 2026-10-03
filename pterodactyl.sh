@@ -20,6 +20,7 @@ set -uo pipefail
 MODE=""
 PANEL_PATH=""
 WINGS_PATH=""
+WINGS_EXPLICIT=false
 PANEL_RESULT=0
 WINGS_RESULT=0
 
@@ -51,11 +52,14 @@ $0 update-wings            обновить Wings
 Кастомные пути:
   -panel=/path             путь Panel
   -wings=/path              путь бинарника Wings
+  -wings=default             стандартный путь Wings: /usr/local/bin/wings
+  -update                    обновить Panel + Wings
 
 Примеры:
   $0 update -panel=/hdd/pterodactyl
   $0 update-panel -panel=/hdd/pterodactyl
   $0 update-wings -wings=/hdd/pterodactyl/wings
+  $0 -panel=/hdd/pterodactyl -wings=default -update
   $0 update -panel=/hdd/pterodactyl -wings=/hdd/pterodactyl/wings
 EOF
 }
@@ -65,8 +69,14 @@ for arg in "$@"; do
     install|update|both|panel|wings|install-panel|update-panel|install-wings|update-wings)
       [[ -z "$MODE" ]] || { err "Указано несколько режимов."; exit 1; }
       MODE="$arg" ;;
+    -update)
+      [[ -z "$MODE" ]] || { err "Указано несколько режимов."; exit 1; }
+      MODE="update" ;;
     -panel=*) PANEL_PATH="${arg#*=}" ;;
-    -wings=*) WINGS_PATH="${arg#*=}" ;;
+    -wings=*)
+      WINGS_PATH="${arg#*=}"
+      WINGS_EXPLICIT=true
+      [[ "$WINGS_PATH" == "default" ]] && WINGS_PATH="$DEFAULT_WINGS_PATH" ;;
     -h|--help|help) usage; exit 0 ;;
     *) err "Неизвестный аргумент: $arg"; usage; exit 1 ;;
   esac
@@ -110,6 +120,7 @@ detect_panel(){
 }
 
 detect_wings(){
+  [[ "$WINGS_EXPLICIT" == true ]] && return
   [[ -n "$WINGS_PATH" ]] && return
   local p
   if systemctl cat wings >/dev/null 2>&1; then
