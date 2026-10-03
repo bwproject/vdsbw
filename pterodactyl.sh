@@ -21,6 +21,7 @@ MODE=""
 PANEL_PATH=""
 WINGS_PATH=""
 WINGS_EXPLICIT=false
+LOGS=false
 PANEL_RESULT=0
 WINGS_RESULT=0
 
@@ -54,12 +55,14 @@ $0 update-wings            обновить Wings
   -wings=/path              путь бинарника Wings
   -wings=default             стандартный путь Wings: /usr/local/bin/wings
   -update                    обновить Panel + Wings
+  -logs                      подробный лог выполнения команд
 
 Примеры:
   $0 update -panel=/hdd/pterodactyl
   $0 update-panel -panel=/hdd/pterodactyl
   $0 update-wings -wings=/hdd/pterodactyl/wings
   $0 -panel=/hdd/pterodactyl -wings=default -update
+  $0 -panel=/hdd/pterodactyl -wings=default -update -logs
   $0 update -panel=/hdd/pterodactyl -wings=/hdd/pterodactyl/wings
 EOF
 }
@@ -72,6 +75,8 @@ for arg in "$@"; do
     -update)
       [[ -z "$MODE" ]] || { err "Указано несколько режимов."; exit 1; }
       MODE="update" ;;
+    -logs)
+      LOGS=true ;;
     -panel=*) PANEL_PATH="${arg#*=}" ;;
     -wings=*)
       WINGS_PATH="${arg#*=}"
@@ -103,6 +108,11 @@ done
     *) err "Неверный выбор."; exit 1 ;;
   esac
 }
+
+if [[ "$LOGS" == true ]]; then
+  export PS4='[LOG] + '
+  set -x
+fi
 
 case "$MODE" in
   both) MODE=update ;;
