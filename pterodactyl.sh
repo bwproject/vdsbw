@@ -210,13 +210,27 @@ update_panel(){
   # .env must survive replacement of release files.
   [[ -f .env ]] && cp -a .env .env.projectbw-backup
 
-  if php artisan down; then maintenance=true; fi
+  # Maintenance mode must never block the update.
+  # If PHP/PHP-FPM or the application is already stopped/unavailable,
+  # artisan down may hang while trying to bootstrap Laravel.
+  info "Включение режима обслуживания Panel..."
+  if timeout --foreground 30s php artisan down; then
+    maintenance=true
+    ok "Режим обслуживания включён."
+  else
+    rc=$?
+    if [[ "$rc" -eq 124 ]]; then
+      warn "php artisan down завис более 30 секунд. Продолжаем обновление."
+    else
+      warn "php artisan down завершился с кодом $rc. Продолжаем обновление."
+    fi
+  fi
 
   info "Скачивание последнего релиза Panel..."
   if ! curl -fL --retry 3 --connect-timeout 15       https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz       | tar -xz; then
     err "Не удалось скачать/распаковать Panel."
     [[ -f .env.projectbw-backup ]] && mv -f .env.projectbw-backup .env
-    [[ "$maintenance" == true ]] && php artisan up || true
+    [[ "$maintenance" == true ]] && timeout --foreground 30s php artisan up || true
     return 1
   fi
 
@@ -227,7 +241,7 @@ update_panel(){
   info "Composer..."
   if ! COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader; then
     err "Composer завершился с ошибкой."
-    php artisan up || true
+    timeout --foreground 30s php artisan up || true
     return 1
   fi
 
@@ -251,7 +265,7 @@ update_panel(){
     systemctl restart pteroq.service || warn "Не удалось перезапустить pteroq.service"
   fi
 
-  php artisan up || true
+  timeout --foreground 30s php artisan up || true
   ok "Panel обновлена: $p"
   return 0
 }
