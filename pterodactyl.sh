@@ -87,6 +87,8 @@ for arg in "$@"; do
   esac
 done
 
+[[ "$MODE" == "update" || "$MODE" == "both" || "$MODE" == "panel" || "$MODE" == "wings" || "$MODE" == "update-panel" || "$MODE" == "update-wings" ]] && LOGS=true
+
 [[ -n "$MODE" ]] || {
   echo "======================================"
   echo " ProjectBW Pterodactyl"
