@@ -134,6 +134,14 @@ cleanup_logs() {
     log "Cleaning old rotated logs..."
     find /var/log -type f \( -name '*.gz' -o -name '*.xz' -o -name '*.bz2' -o -name '*.old' \) -mtime +30 -print -delete >>"$LOG_FILE" 2>&1 || true
     find /var/log -type f \( -name 'syslog.*' -o -name 'messages.*' -o -name 'auth.log.*' -o -name 'kern.log.*' -o -name 'daemon.log.*' \) -mtime +14 -delete 2>>"$LOG_FILE" || true
+
+    if [[ -d /var/log/nginx ]]; then
+        log "Cleaning old Nginx logs..."
+        find /var/log/nginx -type f \( -name '*.gz' -o -name '*.xz' -o -name '*.bz2' -o -name '*.old' \) -mtime +7 -print -delete >>"$LOG_FILE" 2>&1 || true
+        find /var/log/nginx -type f -name '*.log.*' -mtime +14 -print -delete >>"$LOG_FILE" 2>&1 || true
+        find /var/log/nginx -type f -name '*.log' -size +200M -print -exec truncate -s 0 {} \; >>"$LOG_FILE" 2>&1 || true
+    fi
+
     [[ -d /var/crash ]] && find /var/crash -type f -mtime +30 -delete 2>>"$LOG_FILE" || true
     find /tmp -xdev -type f -mtime +7 -delete 2>>"$LOG_FILE" || true
     find /var/tmp -xdev -type f -mtime +14 -delete 2>>"$LOG_FILE" || true
@@ -142,6 +150,12 @@ cleanup_logs() {
 cleanup_docker() {
     command -v docker >/dev/null 2>&1 || { log "Docker not installed; skipping."; return 0; }
     docker info >/dev/null 2>&1 || { log "Docker not running; skipping."; return 0; }
+
+    local running_containers=""
+    running_containers="$(docker ps -q 2>/dev/null || true)"
+    if [[ -n "$running_containers" ]]; then
+        log "Remembering running Docker containers before cleanup: $(wc -w <<< "$running_containers")"
+    fi
 
     run_cmd "Removing stopped Docker containers" docker container prune -f
     run_cmd "Removing unused Docker images" docker image prune -af
@@ -157,6 +171,18 @@ cleanup_docker() {
         fi
     done < <(find /var/lib/docker/containers -type f -name '*-json.log' -print0 2>/dev/null)
     log "Oversized Docker logs truncated: $count"
+
+    if [[ -n "$running_containers" ]]; then
+        log "Restarting Docker containers that were running before cleanup..."
+        while IFS= read -r container_id; do
+            [[ -n "$container_id" ]] || continue
+            if docker restart "$container_id" >>"$LOG_FILE" 2>&1; then
+                log "OK: restarted Docker container $container_id"
+            else
+                log "WARNING: failed to restart Docker container $container_id"
+            fi
+        done <<< "$running_containers"
+    fi
 }
 
 cleanup_docker_tmp() {
@@ -177,6 +203,20 @@ cleanup() {
     cleanup_logs
     cleanup_docker
     cleanup_docker_tmp
+
+    if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^wings.service'; then
+        run_cmd "Restarting Pterodactyl Wings" systemctl restart wings
+    elif systemctl list-unit-files --type=service 2>/dev/null | grep -q '^pterodactyl-wings.service'; then
+        run_cmd "Restarting Pterodactyl Wings" systemctl restart pterodactyl-wings
+    else
+        log "Wings service not found; skipping."
+    fi
+
+    if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^nginx.service'; then
+        run_cmd "Restarting Nginx" systemctl restart nginx
+    else
+        log "Nginx service not found; skipping."
+    fi
 
     after="$(df -B1 --output=avail / | tail -n1 | tr -d ' ')"
     if [[ "$before" =~ ^[0-9]+$ && "$after" =~ ^[0-9]+$ ]]; then
