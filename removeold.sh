@@ -10,6 +10,7 @@ STATE_DIR="/var/lib/removeold"
 LOG_FILE="/var/log/removeold.log"
 LOCK_FILE="/run/removeold.lock"
 DOCKER_LOG_MAX_BYTES=$((200 * 1024 * 1024))
+SCREEN_NAME="remove"
 
 log() {
     printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"
@@ -28,6 +29,29 @@ run_cmd() {
 
 require_root() {
     [[ "$(id -u)" -eq 0 ]] || { echo "Run as root: sudo bash removeold.sh"; exit 1; }
+}
+
+ensure_screen() {
+    command -v screen >/dev/null 2>&1 || {
+        log "screen is not installed. Installing screen..."
+        apt-get update
+        apt-get install -y screen
+    }
+
+    if screen -list 2>/dev/null | grep -qE "[[:space:]]+[0-9]+\\.${SCREEN_NAME}[[:space:]]"; then
+        return 0
+    fi
+
+    log "screen session ${SCREEN_NAME} not found. Creating it..."
+    screen -dmS "$SCREEN_NAME" bash -c "exec \"$INSTALL_PATH\" --run"
+    sleep 1
+
+    if screen -list 2>/dev/null | grep -qE "[[:space:]]+[0-9]+\\.${SCREEN_NAME}[[:space:]]"; then
+        log "screen session ${SCREEN_NAME} started."
+        log "Attach with: screen -r ${SCREEN_NAME}"
+    else
+        log "WARNING: failed to create screen session ${SCREEN_NAME}."
+    fi
 }
 
 install_self() {
@@ -232,15 +256,23 @@ cleanup() {
 main() {
     require_root
 
-    if [[ "${1:-}" != "--run" ]]; then
-        install_self
-        install_systemd
-        update_self
-        cleanup
-    else
-        update_self
-        cleanup
+    install_self
+    ensure_screen
+
+    if [[ -z "${STY:-}" ]]; then
+        if screen -list 2>/dev/null | grep -qE "[[:space:]]+[0-9]+\\.${SCREEN_NAME}[[:space:]]"; then
+            log "Cleanup is running in screen session ${SCREEN_NAME}."
+            exit 0
+        fi
+        log "WARNING: screen session could not be started; continuing without screen."
     fi
+
+    if [[ "${1:-}" != "--run" ]]; then
+        install_systemd
+    fi
+
+    update_self
+    cleanup
 }
 
 main "$@"
