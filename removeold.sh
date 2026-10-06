@@ -151,6 +151,7 @@ cleanup_journal() {
     command -v journalctl >/dev/null 2>&1 || return 0
     run_cmd "Vacuuming journal older than 14 days" journalctl --vacuum-time=14d
     run_cmd "Limiting journal to 500 MB" journalctl --vacuum-size=500M
+    run_cmd "Keeping at most 10 archived journal files" journalctl --vacuum-files=10
 }
 
 cleanup_logs() {
@@ -235,14 +236,38 @@ cleanup() {
     should_run_cleanup
 
     log "===== ProjectBW cleanup started ====="
-    local before after freed
+    local before after freed usage
     before="$(df -B1 --output=avail / | tail -n1 | tr -d ' ')"
+    usage="$(df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}')"
+    log "Disk usage before cleanup: ${usage}%"
+
+    if [[ "$usage" =~ ^[0-9]+$ ]]; then
+        if (( usage >= 98 )); then
+            log "[EMERGENCY] Disk usage above 98%. Running maximum safe cleanup."
+        elif (( usage >= 95 )); then
+            log "[EMERGENCY] Disk usage above 95%. Running aggressive safe cleanup."
+        elif (( usage >= 90 )); then
+            log "[WARNING] Disk usage above 90%. Running extended cleanup."
+        elif (( usage >= 80 )); then
+            log "[NOTICE] Disk usage above 80%. Running normal cleanup."
+        fi
+    fi
 
     cleanup_apt
+    usage="$(df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}')"
+    log "Disk usage after APT cleanup: ${usage}%"
     cleanup_journal
+    usage="$(df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}')"
+    log "Disk usage after journal cleanup: ${usage}%"
     cleanup_logs
+    usage="$(df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}')"
+    log "Disk usage after log cleanup: ${usage}%"
     cleanup_docker
+    usage="$(df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}')"
+    log "Disk usage after Docker cleanup: ${usage}%"
     cleanup_docker_tmp
+    usage="$(df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}')"
+    log "Disk usage after temporary Docker cleanup: ${usage}%"
 
     if systemctl list-unit-files --type=service 2>/dev/null | grep -q '^wings.service'; then
         run_cmd "Restarting Pterodactyl Wings" systemctl restart wings
@@ -264,6 +289,7 @@ cleanup() {
         (( freed >= 0 )) && log "Freed: $(numfmt --to=iec "$freed" 2>/dev/null || echo "$freed bytes")"
     fi
 
+    log "Disk usage after all cleanup: $(df -P / | awk 'NR==2 {print $5}')"
     df -h / | tee -a "$LOG_FILE"
     date +%s > "$STATE_DIR/last_run"
     log "===== ProjectBW cleanup finished ====="
