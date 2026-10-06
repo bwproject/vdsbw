@@ -110,13 +110,12 @@ EOF
 
     cat > "/etc/systemd/system/$TIMER_NAME" <<EOF
 [Unit]
-Description=ProjectBW disk cleanup every 5 days
+Description=ProjectBW disk cleanup every 5 days at 03:22
 
 [Timer]
-OnBootSec=30min
-OnUnitActiveSec=5d
+OnCalendar=*-*-* 03:22:00
 Persistent=true
-RandomizedDelaySec=30min
+RandomizedDelaySec=0
 Unit=$SERVICE_NAME
 
 [Install]
@@ -214,9 +213,26 @@ cleanup_docker_tmp() {
     find /var/lib/docker -xdev -type f -name '*.tmp' -mtime +7 -delete 2>>"$LOG_FILE" || true
 }
 
+should_run_cleanup() {
+    local now last
+    now="$(date +%s)"
+    last=0
+
+    if [[ -f "$STATE_DIR/last_run" ]]; then
+        last="$(cat "$STATE_DIR/last_run" 2>/dev/null || echo 0)"
+    fi
+
+    if [[ "$last" =~ ^[0-9]+$ ]] && (( now - last < 432000 )); then
+        log "Cleanup skipped: less than 5 days since the previous cleanup."
+        exit 0
+    fi
+}
+
 cleanup() {
     exec 9>"$LOCK_FILE"
     flock -n 9 || { log "Another cleanup is already running."; exit 0; }
+
+    should_run_cleanup
 
     log "===== ProjectBW cleanup started ====="
     local before after freed
