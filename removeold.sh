@@ -106,10 +106,22 @@ EOF
 
 cleanup_apt() {
     command -v apt-get >/dev/null 2>&1 || return 0
-    run_cmd "Cleaning APT cache" apt-get clean
+
+    run_cmd "Cleaning APT package cache" apt-get clean
+    run_cmd "Removing obsolete APT packages from cache" apt-get autoclean -y
     run_cmd "Removing unused APT packages" apt-get autoremove -y
-    log "Removing old APT package lists..."
-    find /var/lib/apt/lists -type f -delete 2>>"$LOG_FILE" || true
+
+    if [[ -d /var/cache/apt/archives ]]; then
+        log "Removing leftover downloaded .deb packages..."
+        find /var/cache/apt/archives -type f -name '*.deb' -delete 2>>"$LOG_FILE" || true
+        find /var/cache/apt/archives -type f -name '*.bin' -delete 2>>"$LOG_FILE" || true
+    fi
+
+    if [[ -d /var/lib/apt/lists ]]; then
+        log "Removing cached APT repository lists..."
+        find /var/lib/apt/lists -type f -delete 2>>"$LOG_FILE" || true
+        find /var/lib/apt/lists -type d -empty -delete 2>>"$LOG_FILE" || true
+    fi
 }
 
 cleanup_journal() {
