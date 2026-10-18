@@ -1,37 +1,175 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 BASE_DIR="/hdd/compose"
+SCRIPT_URL="https://raw.githubusercontent.com/bwproject/vdsbw/main/all.sh"
+SELF_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
 
-# Цвета для вывода
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
-NC='\033[0m' # Без цвета
+NC='\033[0m'
 
-# Проверка, что docker установлен и работает
-if ! command -v docker &>/dev/null; then
+# Automatically update this script from GitHub before running any action.
+auto_update() {
+  local downloader=""
+  command -v curl >/dev/null 2>&1 && downloader="curl"
+  command -v wget >/dev/null 2>&1 && downloader="wget"
+
+  if [[ -z "$downloader" ]]; then
+    echo -e "${YELLOW}Предупреждение:${NC} curl/wget не найден, пропускаю автообновление."
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)" || return 0
+
+  echo -e "${CYAN}Проверка обновлений all.sh на GitHub...${NC}"
+  if [[ "$downloader" == "curl" ]]; then
+    curl -fsSL --connect-timeout 5 --max-time 20 "$SCRIPT_URL" -o "$tmp" || {
+      echo -e "${YELLOW}Не удалось проверить обновление; продолжаю с текущей версией.${NC}"
+      rm -f "$tmp"
+      return 0
+    }
+  else
+    wget -q --timeout=20 "$SCRIPT_URL" -O "$tmp" || {
+      echo -e "${YELLOW}Не удалось проверить обновление; продолжаю с текущей версией.${NC}"
+      rm -f "$tmp"
+      return 0
+    }
+  fi
+
+  if ! bash -n "$tmp"; then
+    echo -e "${RED}Ошибка:${NC} полученный файл не прошёл проверку синтаксиса; обновление отменено."
+    rm -f "$tmp"
+    return 0
+  fi
+
+  if ! cmp -s "$tmp" "$SELF_PATH"; then
+    if cp "$tmp" "$SELF_PATH"; then
+      chmod +x "$SELF_PATH"
+      rm -f "$tmp"
+      echo -e "${GREEN}Скрипт обновлён. Перезапускаю...${NC}"
+      exec "$SELF_PATH" "$@"
+    else
+      echo -e "${YELLOW}Не удалось заменить файл; продолжаю с текущей версией.${NC}"
+    fi
+  else
+    echo -e "${GREEN}Установлена последняя версия.${NC}"
+  fi
+  rm -f "$tmp"
+}
+
+# Update first, preserving any positional arguments such as ./all.sh 1.
+auto_update "$@"
+
+# Check Docker after updating.
+if ! command -v docker >/dev/null 2>&1; then
   echo -e "${RED}Ошибка:${NC} Docker не установлен или не в PATH."
   exit 1
 fi
-
-if ! docker info &>/dev/null; then
+if ! docker info >/dev/null 2>&1; then
   echo -e "${RED}Ошибка:${NC} Docker не запущен или нет доступа."
   exit 1
 fi
+if ! command -v screen >/dev/null 2>&1; then
+  echo -e "${RED}Ошибка:${NC} screen не установлен. Установите его: apt-get install screen"
+  exit 1
+fi
 
-function run_in_dirs() {
-  local cmd=$1
-  for dir in "$BASE_DIR"/*/; do
-    if [ -f "$dir/docker-compose.yml" ]; then
-      echo -e "${CYAN}>>> Выполняется в $dir:${NC} docker compose $cmd"
-      (cd "$dir" && docker compose $cmd)
+# Execute each compose command in a temporary screen session named after its directory.
+# Wait for the session to finish; for "up -d", Docker containers keep running independently.
+run_in_dirs() {
+  local cmd="$1"
+  local dir name session safe_cmd
+  local failed=0
+
+  shopt -s nullglob
+  local dirs=( "$BASE_DIR"/*/ )
+  shopt -u nullglob
+
+  for dir in "${dirs[@]}"; do
+    if [[ -f "${dir}docker-compose.yml" || -f "${dir}compose.yml" || -f "${dir}compose.yaml" || -f "${dir}docker-compose.yaml" ]]; then
+      name="$(basename "${dir%/}")"
+      # Screen session names are kept short and shell-safe.
+      session="${name//[^a-zA-Z0-9_.-]/_}"
+      echo -e "${CYAN}>>> Выполняется в ${dir}:${NC} docker compose ${cmd}"
+      echo -e "${CYAN}>>> Screen: ${session}${NC}"
+
+      if screen -ls 2>/dev/null | grep -Fq ".${session}[[:space:]]"; then
+        session="${session}_$RANDOM"
+      fi
+
+      screen -dmS "$session" bash -lc 'cd -- "$1" || exit 1; shift; "$@"' _ "$dir" docker compose $cmd
+      if [[ $? -ne 0 ]]; then
+        echo -e "${RED}Не удалось создать screen для ${name}.${NC}"
+        failed=1
+        continue
+      fi
+
+      # Wait until the short-lived command finishes and screen exits.
+      while screen -ls 2>/dev/null | grep -Eq "[.]\${session}[[:space:]]"; do
+        sleep 0.2
+      done
       echo
     else
-      echo -e "${YELLOW}Пропущено (нет docker-compose.yml): $dir${NC}"
+      echo -e "${YELLOW}Пропущено (нет compose-файла): ${dir}${NC}"
+    fi
+  done
+
+  return "$failed"
+}
+
+show_status() {
+  shopt -s nullglob
+  local dirs=( "$BASE_DIR"/*/ )
+  shopt -u nullglob
+  local dir
+  for dir in "${dirs[@]}"; do
+    if [[ -f "${dir}docker-compose.yml" || -f "${dir}compose.yml" || -f "${dir}compose.yaml" || -f "${dir}docker-compose.yaml" ]]; then
+      echo -e "${CYAN}>>> Статус в ${dir}:${NC}"
+      (cd "$dir" && docker compose ps)
+      echo
     fi
   done
 }
+
+run_action() {
+  case "$1" in
+    1)
+      echo -e "${GREEN}Запуск всех контейнеров...${NC}"
+      run_in_dirs up -d
+      ;;
+    2)
+      echo -e "${GREEN}Перезагрузка всех контейнеров...${NC}"
+      run_in_dirs down
+      run_in_dirs up -d
+      ;;
+    3)
+      echo -e "${GREEN}Обновление образов...${NC}"
+      run_in_dirs pull
+      ;;
+    4)
+      echo -e "${GREEN}Статус всех контейнеров...${NC}"
+      show_status
+      ;;
+    5)
+      echo -e "${GREEN}Выход.${NC}"
+      exit 0
+      ;;
+    *)
+      echo -e "${RED}Неверный выбор! Используйте 1, 2, 3, 4 или 5.${NC}"
+      return 2
+      ;;
+  esac
+}
+
+# If an argument is supplied, execute that menu option immediately.
+if [[ -n "${1:-}" ]]; then
+  run_action "$1"
+  exit $?
+fi
 
 while true; do
   echo -e "${GREEN}Выберите действие:${NC}"
@@ -40,41 +178,6 @@ while true; do
   echo "3 — Обновить образы"
   echo "4 — Показать статус всех контейнеров"
   echo "5 — Выйти"
-
-  read -rp "Введите номер действия: " choice
-
-  case "$choice" in
-    1)
-      echo -e "${GREEN}Запуск всех контейнеров...${NC}"
-      run_in_dirs "up -d"
-      ;;
-    2)
-      echo -e "${GREEN}Перезагрузка всех контейнеров...${NC}"
-      run_in_dirs "down"
-      run_in_dirs "up -d"
-      ;;
-    3)
-      echo -e "${GREEN}Обновление образов...${NC}"
-      run_in_dirs "pull"
-      ;;
-    4)
-      echo -e "${GREEN}Статус всех контейнеров...${NC}"
-      for dir in "$BASE_DIR"/*/; do
-        if [ -f "$dir/docker-compose.yml" ]; then
-          echo -e "${CYAN}>>> Статус в $dir:${NC}"
-          (cd "$dir" && docker compose ps)
-          echo
-        else
-          echo -e "${YELLOW}Пропущено (нет docker-compose.yml): $dir${NC}"
-        fi
-      done
-      ;;
-    5)
-      echo -e "${GREEN}Выход.${NC}"
-      exit 0
-      ;;
-    *)
-      echo -e "${RED}Неверный выбор! Попробуйте снова.${NC}"
-      ;;
-  esac
+  read -rp "Введите номер действия: " choice || exit 0
+  run_action "$choice"
 done
