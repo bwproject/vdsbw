@@ -215,12 +215,12 @@ show_status_screen() {
 run_action() {
   case "$1" in
     1) echo -e "${GREEN}Запуск всех контейнеров без screen...${NC}"; run_in_dirs_direct up -d ;;
-    2) echo -e "${GREEN}Перезагрузка всех контейнеров без screen...${NC}"; run_in_dirs_direct down; run_in_dirs_direct up -d ;;
+    2) echo -e "${GREEN}Остановка всех контейнеров без screen...${NC}"; run_in_dirs_direct down ;;
     3) echo -e "${GREEN}Обновление образов без screen...${NC}"; run_in_dirs_direct pull ;;
     4) echo -e "${GREEN}Статус всех контейнеров без screen...${NC}"; show_status ;;
     5) echo -e "${GREEN}Выход.${NC}"; exit 0 ;;
     6) echo -e "${GREEN}Запуск всех контейнеров через screen...${NC}"; run_in_dirs up -d ;;
-    7) echo -e "${GREEN}Перезагрузка всех контейнеров через screen...${NC}"; run_in_dirs down; run_in_dirs up -d ;;
+    7) echo -e "${GREEN}Остановка всех контейнеров через screen...${NC}"; run_in_dirs down ;;
     8) echo -e "${GREEN}Обновление образов через screen...${NC}"; run_in_dirs pull ;;
     9) echo -e "${GREEN}Статус всех контейнеров через screen...${NC}"; show_status_screen ;;
     10) echo -e "${GREEN}Выход.${NC}"; exit 0 ;;
@@ -237,14 +237,14 @@ fi
 while true; do
   echo -e "${GREEN}Без screen:${NC}"
   echo "1 — Запустить все контейнеры"
-  echo "2 — Перезагрузить все контейнеры"
+  echo "2 — Остановить все контейнеры"
   echo "3 — Обновить образы"
   echo "4 — Показать статус всех контейнеров"
   echo "5 — Выйти"
   echo
   echo -e "${GREEN}Через screen:${NC}"
   echo "6 — Запустить все контейнеры"
-  echo "7 — Перезагрузить все контейнеры"
+  echo "7 — Остановить все контейнеры"
   echo "8 — Обновить образы"
   echo "9 — Показать статус всех контейнеров"
   echo "10 — Выйти"
