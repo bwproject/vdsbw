@@ -97,7 +97,7 @@ run_in_dirs() {
       echo -e "${CYAN}>>> Выполняется в ${dir}:${NC} docker compose ${cmd}"
       echo -e "${CYAN}>>> Screen: ${session}${NC}"
 
-      if screen -ls 2>/dev/null | grep -Fq ".${session}[[:space:]]"; then
+      if screen -ls 2>/dev/null | grep -Eq "[.]${session}[[:space:]]"; then
         session="${session}_$RANDOM"
       fi
 
@@ -109,7 +109,7 @@ run_in_dirs() {
       fi
 
       # Wait until the short-lived command finishes and screen exits.
-      while screen -ls 2>/dev/null | grep -Eq "[.]\${session}[[:space:]]"; do
+      while screen -ls 2>/dev/null | grep -Eq "[.]${session}[[:space:]]"; do
         sleep 0.2
       done
       echo
