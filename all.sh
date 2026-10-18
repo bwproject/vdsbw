@@ -11,59 +11,63 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Automatically update this script from GitHub before running any action.
+# Always fetch the latest version from GitHub before running any action.
+# If GitHub cannot be reached, stop rather than silently running an outdated script.
 auto_update() {
-  local downloader=""
-  command -v curl >/dev/null 2>&1 && downloader="curl"
-  command -v wget >/dev/null 2>&1 && downloader="wget"
+  local tmp downloader url
+  tmp="$(mktemp)" || {
+    echo -e "${RED}Ошибка:${NC} не удалось создать временный файл для обновления."
+    exit 1
+  }
 
-  if [[ -z "$downloader" ]]; then
-    echo -e "${YELLOW}Предупреждение:${NC} curl/wget не найден, пропускаю автообновление."
-    return 0
-  fi
+  url="${SCRIPT_URL}?cache_bust=$(date +%s)-$$"
+  echo -e "${CYAN}Принудительно загружаю актуальный all.sh с GitHub... ${NC}"
 
-  local tmp
-  tmp="$(mktemp)" || return 0
-
-  echo -e "${CYAN}Проверка обновлений all.sh на GitHub...${NC}"
-  if [[ "$downloader" == "curl" ]]; then
-    curl -fsSL --connect-timeout 5 --max-time 20 "$SCRIPT_URL" -o "$tmp" || {
-      echo -e "${YELLOW}Не удалось проверить обновление; продолжаю с текущей версией.${NC}"
+  if command -v curl >/dev/null 2>&1; then
+    downloader="curl"
+    if ! curl -fLsS --retry 2 --connect-timeout 10 --max-time 45 -H 'Cache-Control: no-cache' "$url" -o "$tmp"; then
+      echo -e "${RED}Ошибка:${NC} не удалось скачать обновление с GitHub. Запуск отменён."
       rm -f "$tmp"
-      return 0
-    }
+      exit 1
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    downloader="wget"
+    if ! wget -q --tries=3 --timeout=45 --header='Cache-Control: no-cache' "$url" -O "$tmp"; then
+      echo -e "${RED}Ошибка:${NC} не удалось скачать обновление с GitHub. Запуск отменён."
+      rm -f "$tmp"
+      exit 1
+    fi
   else
-    wget -q --timeout=20 "$SCRIPT_URL" -O "$tmp" || {
-      echo -e "${YELLOW}Не удалось проверить обновление; продолжаю с текущей версией.${NC}"
-      rm -f "$tmp"
-      return 0
-    }
+    echo -e "${RED}Ошибка:${NC} нужен curl или wget для обязательного обновления."
+    rm -f "$tmp"
+    exit 1
   fi
 
-  if ! bash -n "$tmp"; then
-    echo -e "${RED}Ошибка:${NC} полученный файл не прошёл проверку синтаксиса; обновление отменено."
+  if [[ ! -s "$tmp" ]] || ! grep -q '^#!/usr/bin/env bash' "$tmp" || ! bash -n "$tmp"; then
+    echo -e "${RED}Ошибка:${NC} скачанный all.sh пустой или не прошёл проверку. Запуск отменён."
+    rm -f "$tmp"
+    exit 1
+  fi
+
+  if cmp -s "$tmp" "$SELF_PATH"; then
+    echo -e "${GREEN}Скрипт уже актуален (версия проверена на GitHub).${NC}"
     rm -f "$tmp"
     return 0
   fi
 
-  if ! cmp -s "$tmp" "$SELF_PATH"; then
-    if cp "$tmp" "$SELF_PATH"; then
-      chmod +x "$SELF_PATH"
-      rm -f "$tmp"
-      echo -e "${GREEN}Скрипт обновлён. Перезапускаю...${NC}"
-      exec "$SELF_PATH" "$@"
-    else
-      echo -e "${YELLOW}Не удалось заменить файл; продолжаю с текущей версией.${NC}"
-    fi
-  else
-    echo -e "${GREEN}Установлена последняя версия.${NC}"
+  if ! cp "$tmp" "$SELF_PATH"; then
+    echo -e "${RED}Ошибка:${NC} не удалось обновить $SELF_PATH. Проверьте права доступа."
+    rm -f "$tmp"
+    exit 1
   fi
+  chmod +x "$SELF_PATH"
   rm -f "$tmp"
+
+  echo -e "${GREEN}Скрипт обновлён. Перезапускаю новую версию...${NC}"
+  exec bash "$SELF_PATH" "$@"
 }
 
-# Update first, preserving any positional arguments such as ./all.sh 1.
 auto_update "$@"
-
 # Check Docker after updating.
 if ! command -v docker >/dev/null 2>&1; then
   echo -e "${RED}Ошибка:${NC} Docker не установлен или не в PATH."
