@@ -82,45 +82,51 @@ fi
 # Wait for the session to finish; for "up -d", Docker containers keep running independently.
 run_in_dirs() {
   local cmd="$1"
-  local dir name session safe_cmd
+  local dir name session
   local failed=0
+  local -a sessions=()
+  local -a session_names=()
 
   shopt -s nullglob
   local dirs=( "$BASE_DIR"/*/ )
   shopt -u nullglob
 
+  # Start every Compose command in its own screen before waiting for any one command.
   for dir in "${dirs[@]}"; do
     if [[ -f "${dir}docker-compose.yml" || -f "${dir}compose.yml" || -f "${dir}compose.yaml" || -f "${dir}docker-compose.yaml" ]]; then
       name="$(basename "${dir%/}")"
-      # Screen session names are kept short and shell-safe.
       session="${name//[^a-zA-Z0-9_.-]/_}"
-      echo -e "${CYAN}>>> Выполняется в ${dir}:${NC} docker compose ${cmd}"
-      echo -e "${CYAN}>>> Screen: ${session}${NC}"
 
-      if screen -ls 2>/dev/null | grep -Eq "[.]${session}[[:space:]]"; then
+      if screen -ls 2>/dev/null | grep -Fq ".${session}"; then
         session="${session}_$RANDOM"
       fi
 
-      screen -dmS "$session" bash -lc 'cd -- "$1" || exit 1; shift; "$@"' _ "$dir" docker compose $cmd
-      if [[ $? -ne 0 ]]; then
+      echo -e "${CYAN}>>> Запускаю в screen ${session}: ${dir}docker compose ${cmd}${NC}"
+      if screen -dmS "$session" bash -lc 'cd -- "$1" || exit 1; shift; "$@"' _ "$dir" docker compose $cmd; then
+        sessions+=( "$session" )
+        session_names+=( "$name" )
+      else
         echo -e "${RED}Не удалось создать screen для ${name}.${NC}"
         failed=1
-        continue
       fi
-
-      # Wait until the short-lived command finishes and screen exits.
-      while screen -ls 2>/dev/null | grep -Eq "[.]${session}[[:space:]]"; do
-        sleep 0.2
-      done
-      echo
     else
       echo -e "${YELLOW}Пропущено (нет compose-файла): ${dir}${NC}"
     fi
   done
 
+  # Every folder has been launched; wait for all short-lived screen commands afterward.
+  local i
+  for i in "${!sessions[@]}"; do
+    session="${sessions[$i]}"
+    name="${session_names[$i]}"
+    while screen -ls 2>/dev/null | grep -Fq ".${session}"; do
+      sleep 0.2
+    done
+    echo -e "${GREEN}Готово: ${name}${NC}"
+  done
+
   return "$failed"
 }
-
 show_status() {
   shopt -s nullglob
   local dirs=( "$BASE_DIR"/*/ )
