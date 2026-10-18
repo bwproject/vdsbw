@@ -85,8 +85,8 @@ fi
 
 # Run Compose commands directly, without creating screen sessions.
 run_in_dirs_direct() {
-  local cmd="$1"
   local dir
+  local -a compose_args=( "$@" )
   local failed=0
 
   shopt -s nullglob
@@ -95,8 +95,8 @@ run_in_dirs_direct() {
 
   for dir in "${dirs[@]}"; do
     if [[ -f "${dir}docker-compose.yml" || -f "${dir}compose.yml" || -f "${dir}compose.yaml" || -f "${dir}docker-compose.yaml" ]]; then
-      echo -e "${CYAN}>>> ${dir}: docker compose ${cmd}${NC}"
-      if ! (cd "$dir" && docker compose $cmd); then
+      echo -e "${CYAN}>>> ${dir}: docker compose ${compose_args[*]}${NC}"
+      if ! (cd "$dir" && docker compose "${compose_args[@]}"); then
         echo -e "${RED}Ошибка выполнения в ${dir}${NC}"
         failed=1
       fi
@@ -111,8 +111,8 @@ run_in_dirs_direct() {
 # Execute each compose command in a temporary screen session named after its directory.
 # Wait for the session to finish; for "up -d", Docker containers keep running independently.
 run_in_dirs() {
-  local cmd="$1"
   local dir name session
+  local -a compose_args=( "$@" )
   local failed=0
   local -a sessions=()
   local -a session_names=()
@@ -131,8 +131,8 @@ run_in_dirs() {
         session="${session}_$RANDOM"
       fi
 
-      echo -e "${CYAN}>>> Запускаю в screen ${session}: ${dir}docker compose ${cmd}${NC}"
-      if screen -dmS "$session" bash -lc 'cd -- "$1" || exit 1; shift; "$@"' _ "$dir" docker compose $cmd; then
+      echo -e "${CYAN}>>> Запускаю в screen ${session}: ${dir}docker compose ${compose_args[*]}${NC}"
+      if screen -dmS "$session" bash -lc 'cd -- "$1" || exit 1; shift; "$@"' _ "$dir" docker compose "${compose_args[@]}"; then
         sessions+=( "$session" )
         session_names+=( "$name" )
       else
