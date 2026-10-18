@@ -82,6 +82,32 @@ if ! command -v screen >/dev/null 2>&1; then
   exit 1
 fi
 
+
+# Run Compose commands directly, without creating screen sessions.
+run_in_dirs_direct() {
+  local cmd="$1"
+  local dir
+  local failed=0
+
+  shopt -s nullglob
+  local dirs=( "$BASE_DIR"/*/ )
+  shopt -u nullglob
+
+  for dir in "${dirs[@]}"; do
+    if [[ -f "${dir}docker-compose.yml" || -f "${dir}compose.yml" || -f "${dir}compose.yaml" || -f "${dir}docker-compose.yaml" ]]; then
+      echo -e "${CYAN}>>> ${dir}: docker compose ${cmd}${NC}"
+      if ! (cd "$dir" && docker compose $cmd); then
+        echo -e "${RED}Ошибка выполнения в ${dir}${NC}"
+        failed=1
+      fi
+      echo
+    else
+      echo -e "${YELLOW}Пропущено (нет compose-файла): ${dir}${NC}"
+    fi
+  done
+  return "$failed"
+}
+
 # Execute each compose command in a temporary screen session named after its directory.
 # Wait for the session to finish; for "up -d", Docker containers keep running independently.
 run_in_dirs() {
@@ -145,33 +171,60 @@ show_status() {
   done
 }
 
+
+show_status_screen() {
+  local dir name session
+  local failed=0
+  local -a sessions=()
+  local -a session_names=()
+  shopt -s nullglob
+  local dirs=( "$BASE_DIR"/*/ )
+  shopt -u nullglob
+
+  for dir in "${dirs[@]}"; do
+    if [[ -f "${dir}docker-compose.yml" || -f "${dir}compose.yml" || -f "${dir}compose.yaml" || -f "${dir}docker-compose.yaml" ]]; then
+      name="$(basename "${dir%/}")"
+      session="${name//[^a-zA-Z0-9_.-]/_}_status"
+      if screen -ls 2>/dev/null | grep -Fq ".${session}"; then
+        session="${session}_$RANDOM"
+      fi
+      echo -e "${CYAN}>>> Статус в screen ${session}: ${dir}${NC}"
+      if screen -dmS "$session" bash -lc 'cd -- "$1" || exit 1; docker compose ps' _ "$dir"; then
+        sessions+=( "$session" )
+        session_names+=( "$name" )
+      else
+        echo -e "${RED}Не удалось создать screen для ${name}.${NC}"
+        failed=1
+      fi
+    fi
+  done
+
+  local i
+  for i in "${!sessions[@]}"; do
+    session="${sessions[$i]}"
+    name="${session_names[$i]}"
+    while screen -ls 2>/dev/null | grep -Fq ".${session}"; do
+      sleep 0.2
+    done
+    echo -e "${GREEN}Статус получен: ${name}${NC}"
+  done
+  return "$failed"
+}
+
+
 run_action() {
   case "$1" in
-    1)
-      echo -e "${GREEN}Запуск всех контейнеров...${NC}"
-      run_in_dirs up -d
-      ;;
-    2)
-      echo -e "${GREEN}Перезагрузка всех контейнеров...${NC}"
-      run_in_dirs down
-      run_in_dirs up -d
-      ;;
-    3)
-      echo -e "${GREEN}Обновление образов...${NC}"
-      run_in_dirs pull
-      ;;
-    4)
-      echo -e "${GREEN}Статус всех контейнеров...${NC}"
-      show_status
-      ;;
-    5)
-      echo -e "${GREEN}Выход.${NC}"
-      exit 0
-      ;;
-    *)
-      echo -e "${RED}Неверный выбор! Используйте 1, 2, 3, 4 или 5.${NC}"
-      return 2
-      ;;
+    1) echo -e "${GREEN}Запуск всех контейнеров без screen...${NC}"; run_in_dirs_direct up -d ;;
+    2) echo -e "${GREEN}Перезагрузка всех контейнеров без screen...${NC}"; run_in_dirs_direct down; run_in_dirs_direct up -d ;;
+    3) echo -e "${GREEN}Обновление образов без screen...${NC}"; run_in_dirs_direct pull ;;
+    4) echo -e "${GREEN}Статус всех контейнеров без screen...${NC}"; show_status ;;
+    5) echo -e "${GREEN}Выход.${NC}"; exit 0 ;;
+    6) echo -e "${GREEN}Запуск всех контейнеров через screen...${NC}"; run_in_dirs up -d ;;
+    7) echo -e "${GREEN}Перезагрузка всех контейнеров через screen...${NC}"; run_in_dirs down; run_in_dirs up -d ;;
+    8) echo -e "${GREEN}Обновление образов через screen...${NC}"; run_in_dirs pull ;;
+    9) echo -e "${GREEN}Статус всех контейнеров через screen...${NC}"; show_status_screen ;;
+    10) echo -e "${GREEN}Выход.${NC}"; exit 0 ;;
+    *) echo -e "${RED}Неверный выбор! Используйте 1–10.${NC}"; return 2 ;;
   esac
 }
 
@@ -182,12 +235,19 @@ if [[ -n "${1:-}" ]]; then
 fi
 
 while true; do
-  echo -e "${GREEN}Выберите действие:${NC}"
+  echo -e "${GREEN}Без screen:${NC}"
   echo "1 — Запустить все контейнеры"
   echo "2 — Перезагрузить все контейнеры"
   echo "3 — Обновить образы"
   echo "4 — Показать статус всех контейнеров"
   echo "5 — Выйти"
+  echo
+  echo -e "${GREEN}Через screen:${NC}"
+  echo "6 — Запустить все контейнеры"
+  echo "7 — Перезагрузить все контейнеры"
+  echo "8 — Обновить образы"
+  echo "9 — Показать статус всех контейнеров"
+  echo "10 — Выйти"
   read -rp "Введите номер действия: " choice || exit 0
   run_action "$choice"
 done
